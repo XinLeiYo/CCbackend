@@ -638,7 +638,7 @@ def get_status_counts():
                 pass
 
 # 獲取器材日誌歷史
-@app.route("/api/equipment/log_history/<string:ccm_id>", methods=["GET"])
+@app.route("/api/equipment/logs/<string:ccm_id>", methods=["GET"])
 @jwt_required()
 def get_log_history(ccm_id):
         conn = get_db_connection()
