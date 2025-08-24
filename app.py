@@ -339,6 +339,16 @@ def get_equipment_data():
                 cursor = conn.cursor()
                 
                 cursor.execute("""
+                        UPDATE CC_MASTER
+                        SET UPD_CNT = (
+                                SELECT COUNT(*)
+                                FROM CC_LOG
+                                WHERE CC_ID_FK = CC_MASTER.CCM_ID
+                        )
+                """)
+                conn.commit()  # 提交變更，確保資料庫內容已更新
+                
+                cursor.execute("""
                         SELECT 
                                 M.CCM_ID,
                                 M.CC_SIZE,
@@ -650,7 +660,11 @@ def get_log_history(ccm_id):
                 cursor.execute("SELECT * FROM CC_LOG WHERE CC_ID_FK = ? ORDER BY UPDATE_TIME DESC", ccm_id)
                 columns = [column[0] for column in cursor.description]
                 history_list = [dict(zip(columns, row)) for row in cursor.fetchall()]
-                return jsonify(history_list), 200
+                response_data = {
+                        "success": True,
+                        "data": history_list
+                }
+                return jsonify(response_data), 200
         except Exception as e:
                 print(f"❌ 獲取日誌歷史錯誤: {e}")
                 return jsonify({"success": False, "error": "伺服器錯誤"}), 500
