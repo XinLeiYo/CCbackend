@@ -1,4 +1,6 @@
-Flask
+Pyodbc
+Flask==2.0.1
 Flask-Cors
 Flask-JWT-Extended
-Pyodbc
+unixodbc==2.3.9
+unixodbc-dev==2.3.9
