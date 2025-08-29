@@ -9,14 +9,11 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, JWTManager, jwt_required, get_jwt_identity
-from dotenv import load_dotenv
 from datetime import timedelta
 import logging
 # ===============================================
 # Flask 和 JWT 配置
 # ===============================================
-# 載入 .env 檔案中的環境變數
-load_dotenv()
 
 # 設定日誌記錄
 logging.basicConfig(level=logging.DEBUG)
@@ -25,7 +22,7 @@ app = Flask(__name__)
 CORS(app)
 
 # 從環境變數設定 JWT 密鑰
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
+app.config["JWT_SECRET_KEY"] = "My@SecretKey"
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
 app.config['UPLOAD_FOLDER'] = 'static/uploads' 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
@@ -50,11 +47,11 @@ def allowed_file(filename):
 # 資料庫連線
 # ===============================================
 # 資料庫連線字串
-SERVER_IP = os.getenv("DB_SERVER_IP")
-INSTANCE = os.getenv("DB_INSTANCE")
-DATABASE = os.getenv("DB_DATABASE")
-USERNAME = os.getenv("DB_USERNAME")
-PASSWORD = os.getenv("DB_PASSWORD")
+SERVER_IP = "localhost"
+INSTANCE = "SQLEXPRESS"
+DATABASE = "YOYODB"
+USERNAME = "sa"
+PASSWORD = "zhanka035"
 DRIVER = "{ODBC Driver 17 for SQL Server}"
 
 if not all([SERVER_IP, INSTANCE, DATABASE, USERNAME, PASSWORD]):
