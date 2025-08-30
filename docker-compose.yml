@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: .
+    container_name: cc-backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      - DB_SERVER=db
+      - DB_NAME=CCDB
+      - DB_USER=sa
+      - DB_PASSWORD=YourStrong!Passw0rd
+    volumes:
+      - .:/app
+
+  db:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: cc-sqlexpress
+    ports:
+      - "1433:1433"
+    environment:
+      SA_PASSWORD: "YourStrong!Passw0rd"
+      ACCEPT_EULA: "Y"
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+volumes:
+  mssql_data:
