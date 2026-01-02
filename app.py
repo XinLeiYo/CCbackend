@@ -15,6 +15,54 @@ import logging
 # ===============================================
 # Flask 和 JWT 配置
 # ===============================================
+
+# 設定日誌記錄
+logging.basicConfig(level=logging.DEBUG)
+
+frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+app = Flask(__name__)
+# 在 Flask App 啟動前執行
+with app.app_context():
+        init_db()
+CORS(app, origins=[frontend_url])
+
+# 從環境變數設定 JWT 密鑰
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
+app.config['UPLOAD_FOLDER'] = 'static/uploads' 
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
+
+jwt = JWTManager(app)
+
+
+# ===============================================
+# 應用程式配置
+# ===============================================
+# 圖片上傳目錄
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+        print(f"📁 已建立上傳資料夾: {app.config['UPLOAD_FOLDER']}")
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# ===============================================
+# 資料庫連線
+# ===============================================
+DATABASE_URL = os.environ.get('DATABASE_URL')
+def get_db_connection():
+        if "db" not in g:
+                try:
+                        # 建立連線
+                        g.db = psycopg2.connect(DATABASE_URL)
+                        logging.debug("成功建立 PostgreSQL 連線")
+                except Exception as ex:
+                        logging.error(f"資料庫連線失敗: {ex}")
+                        return None
+        return g.db
+
 def init_db():
         """在伺服器啟動時，檢查並建立必要的資料表"""
         # 注意：這裡不能用 g.db，因為這不在 Request 內，要手動連線
@@ -82,55 +130,6 @@ def init_db():
         finally:
                 cursor.close()
                 conn.close()
-
-
-
-# 設定日誌記錄
-logging.basicConfig(level=logging.DEBUG)
-
-frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
-app = Flask(__name__)
-# 在 Flask App 啟動前執行
-with app.app_context():
-        init_db()
-CORS(app, origins=[frontend_url])
-
-# 從環境變數設定 JWT 密鑰
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
-app.config['UPLOAD_FOLDER'] = 'static/uploads' 
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
-
-jwt = JWTManager(app)
-
-
-# ===============================================
-# 應用程式配置
-# ===============================================
-# 圖片上傳目錄
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])
-        print(f"📁 已建立上傳資料夾: {app.config['UPLOAD_FOLDER']}")
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-# ===============================================
-# 資料庫連線
-# ===============================================
-DATABASE_URL = os.environ.get('DATABASE_URL')
-def get_db_connection():
-        if "db" not in g:
-                try:
-                        # 建立連線
-                        g.db = psycopg2.connect(DATABASE_URL)
-                        logging.debug("成功建立 PostgreSQL 連線")
-                except Exception as ex:
-                        logging.error(f"資料庫連線失敗: {ex}")
-                        return None
-        return g.db
 
         # 調整 row_to_dict (PostgreSQL 有更方便的寫法，但為了相容你的舊代碼可以保留)
 def row_to_dict(row):
@@ -226,7 +225,7 @@ def login():
                         return jsonify({"success": False, "error": "請提供使用者名稱和密碼"}), 400
 
                 cursor = conn.cursor()
-                cursor.execute(cursor.execute('SELECT "PASSWORD" FROM "CC_USER" WHERE "USER_NAME" = %s', (username,)))
+                cursor.execute('SELECT "PASSWORD" FROM "CC_USER" WHERE "USER_NAME" = %s', (username,))
                 user_row = cursor.fetchone()
 
                 if user_row and check_password_hash(user_row.PASSWORD, password):
@@ -257,7 +256,7 @@ def verify_username():
 
                 cursor = conn.cursor()
                 cursor.execute(
-                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = ?", (username,)
+                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = %s", (username,)
                 )
                 if cursor.fetchone()[0] > 0:
                         return jsonify({"success": True, "message": "使用者名稱存在"}), 200
@@ -284,7 +283,7 @@ def register():
 
                 # 檢查帳號是否已存在
                 cursor = conn.cursor()
-                cursor.execute("SELECT USER_NAME FROM [CC_USER] WHERE USER_NAME = ?", (username,))
+                cursor.execute("SELECT USER_NAME FROM [CC_USER] WHERE USER_NAME = %s", (username,))
                 existing_user = cursor.fetchone()
                 if existing_user:
                         return jsonify({"success": False, "error": "使用者名稱已存在"}), 409
@@ -294,7 +293,7 @@ def register():
 
                 # 插入新使用者
                 cursor.execute(
-                        "INSERT INTO [CC_USER] (USER_NAME, PASSWORD) VALUES (?, ?)",
+                        "INSERT INTO [CC_USER] (USER_NAME, PASSWORD) VALUES (%s, %s)",
                         (username, hashed_password)
                 )
                 conn.commit()
@@ -324,14 +323,14 @@ def reset_password_no_auth():
 
                 cursor = conn.cursor()
                 cursor.execute(
-                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = ?", (username,)
+                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = %s", (username,)
                 )
                 if cursor.fetchone()[0] == 0:
                         return jsonify({"success": False, "error": "使用者不存在"}), 404
 
                 hashed_password = generate_password_hash(new_password)
                 cursor.execute(
-                        "UPDATE [CC_USER] SET PASSWORD = ? WHERE USER_NAME = ?",
+                        "UPDATE [CC_USER] SET PASSWORD = %s WHERE USER_NAME = %s",
                 (hashed_password, username)
                 )
                 conn.commit()
@@ -363,7 +362,7 @@ def forgot_password():
 
                 cursor = conn.cursor()
                 cursor.execute(
-                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = ?", (username,)
+                        "SELECT COUNT(*) FROM CC_USER WHERE USER_NAME = %s", (username,)
                 )
                 user_exists = cursor.fetchone()[0]
 
@@ -402,7 +401,7 @@ def reset_password():
 
                 cursor = conn.cursor()
                 cursor.execute(
-                        "UPDATE [CC_USER] SET PASSWORD = ? WHERE USER_NAME = ?",
+                        "UPDATE [CC_USER] SET PASSWORD = %s WHERE USER_NAME = %s",
                         (hashed_password, target_username)
                 )
                 conn.commit()
@@ -538,7 +537,7 @@ def add_equipment():
                 cursor.execute(
                         """
                         INSERT INTO CC_LOG (CC_ID_FK, INPUT_DATE, CC_STATUS, CC_SUBSTATUS, UPDATE_BY, UPDATE_TIME, COMMENT)
-                        VALUES (?, ?, ?, ?, ?, GETDATE(), ?)
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
                         """,
                         ccm_id, cc_start_time, status, substatus, current_user, comment
                 )
@@ -592,7 +591,7 @@ def update_equipment(ccm_id):
 
                 cursor = conn.cursor()
                 
-                cursor.execute("SELECT UPD_CNT FROM CC_MASTER WHERE CCM_ID = ?", ccm_id)
+                cursor.execute("SELECT UPD_CNT FROM CC_MASTER WHERE CCM_ID = %s", ccm_id)
                 result = cursor.fetchone()
                 
                 if result is None:
@@ -604,9 +603,9 @@ def update_equipment(ccm_id):
                 cursor.execute(
                         """
                         UPDATE CC_MASTER SET
-                        CC_SIZE = ?, BOX_ID = ?, USER_NAME = ?, CC_STARTTIME = ?,
-                        UPD_CNT = ?
-                        WHERE CCM_ID = ?
+                        CC_SIZE = %s, BOX_ID = %s, USER_NAME = %s, CC_STARTTIME = %s,
+                        UPD_CNT = %s
+                        WHERE CCM_ID = %s
                         """,
                         size, box_id, user_name, cc_start_time, new_upd_cnt, ccm_id
                 )
@@ -614,7 +613,7 @@ def update_equipment(ccm_id):
                 cursor.execute(
                         """
                         INSERT INTO CC_LOG (CC_ID_FK, INPUT_DATE, CC_STATUS, CC_SUBSTATUS, UPDATE_BY, UPDATE_TIME, COMMENT)
-                        VALUES (?, ?, ?, ?, ?, GETDATE(), ?)
+                        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
                         """,
                         ccm_id, cc_start_time, status, substatus, current_user, comment
                 )
@@ -667,7 +666,7 @@ def batch_update_equipment():
                                 continue
                         
                         cursor.execute(
-                                "UPDATE CC_MASTER SET UPD_CNT = ISNULL(UPD_CNT, 0) + 1 WHERE CCM_ID = ?",
+                                "UPDATE CC_MASTER SET UPD_CNT = COALENCE(UPD_CNT, 0) + 1 WHERE CCM_ID = %s",
                                 ccm_id.strip()
                         )
                         
@@ -676,7 +675,7 @@ def batch_update_equipment():
                         cursor.execute(
                                 """
                                 INSERT INTO CC_LOG (CC_ID_FK, INPUT_DATE, CC_STATUS, CC_SUBSTATUS, UPDATE_BY, UPDATE_TIME, COMMENT)
-                                VALUES (?, GETDATE(), ?, ?, ?, GETDATE(), ?)
+                                VALUES (%s, CURRENT_TIMESTAMP, %s, %s, %s, CURRENT_TIMESTAMP, %s)
                                 """,
                                 ccm_id.strip(), status, log_substatus, current_user, comment
                         )
@@ -701,7 +700,7 @@ def delete_equipment(ccm_id):
 
         try:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM CC_MASTER WHERE CCM_ID = ?", ccm_id)
+                cursor.execute("DELETE FROM CC_MASTER WHERE CCM_ID = %s", ccm_id)
                 conn.commit()
                 if cursor.rowcount == 0:
                         return jsonify({"success": False, "error": "未找到該器材"}), 404
@@ -724,10 +723,10 @@ def get_status_counts():
                 cursor = conn.cursor()
                 cursor.execute("""
                         SELECT T1.CC_STATUS, COUNT(T1.CC_STATUS) AS count
-                                FROM yoyodb.dbo.CC_LOG AS T1
+                                FROM CC_LOG AS T1
                                 JOIN (
                                         SELECT CC_ID_FK, MAX(UPDATE_TIME) AS MaxDateTime
-                                        FROM yoyodb.dbo.CC_LOG
+                                        FROM CC_LOG
                                         GROUP BY CC_ID_FK
                                 ) AS T2 ON T1.CC_ID_FK = T2.CC_ID_FK AND T1.UPDATE_TIME = T2.MaxDateTime
                                 GROUP BY T1.CC_STATUS
@@ -750,7 +749,7 @@ def get_log_history(ccm_id):
         try:
                 cursor = conn.cursor()
                 # 你的歷史紀錄表格是 CC_LOG
-                cursor.execute("SELECT * FROM CC_LOG WHERE CC_ID_FK = ? ORDER BY UPDATE_TIME DESC", ccm_id)
+                cursor.execute("SELECT * FROM CC_LOG WHERE CC_ID_FK = %s ORDER BY UPDATE_TIME DESC", ccm_id)
                 columns = [column[0] for column in cursor.description]
                 history_list = [dict(zip(columns, row)) for row in cursor.fetchall()]
                 response_data = {
@@ -806,7 +805,7 @@ def upload_report():
                         """
                         INSERT INTO CC_REPORT 
                         (CCM_ID_FK, REPORTER, REPORT_TIME, ISSUE_TYPE, ISSUE_INFO, IMAGE_PATH,STATUS)
-                        VALUES (?, ?, GETDATE(), ?, ?, ?, ?)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s, %s, %s)
                         """,
                         ccm_id, current_user, issue_type, issue_description, images_json, status
                 )
@@ -880,8 +879,8 @@ def update_report(report_id):
                 cursor = conn.cursor()
                 sql = """
                         UPDATE CC_REPORT SET
-                        STATUS = ?, PROCESSER = ?, PROCESS_NOTES = ?, PROCESS_TIME = GETDATE()
-                        WHERE ID = ?
+                        STATUS = %s, PROCESSER = %s, PROCESS_NOTES = %s, PROCESS_TIME = CURRENT_TIMESTAMP
+                        WHERE ID = %s
                 """
                 cursor.execute(sql, status, current_user, process_notes, report_id)
                 conn.commit()
@@ -909,7 +908,7 @@ def delete_report(report_id):
                 cursor = conn.cursor()
                 
                 # 刪除圖片文件
-                cursor.execute("SELECT IMAGE_PATH FROM CC_REPORT WHERE ID = ?", (report_id,))
+                cursor.execute("SELECT IMAGE_PATH FROM CC_REPORT WHERE ID = %s", (report_id,))
                 image_path_row = cursor.fetchone()
                 if image_path_row and image_path_row.IMAGE_PATH:
                         file_to_delete = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(image_path_row.IMAGE_PATH))
@@ -917,7 +916,7 @@ def delete_report(report_id):
                                 os.remove(file_to_delete)
                                 print(f"✅ 已刪除圖片文件: {file_to_delete}")
 
-                cursor.execute("DELETE FROM CC_REPORT WHERE ID = ?", (report_id,))
+                cursor.execute("DELETE FROM CC_REPORT WHERE ID = %s", (report_id,))
                 conn.commit()
 
                 if cursor.rowcount == 0:
