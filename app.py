@@ -12,41 +12,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, JWTManager, jwt_required, get_jwt_identity
 from datetime import timedelta
 import logging
-# ===============================================
-# Flask 和 JWT 配置
-# ===============================================
-
-# 設定日誌記錄
-logging.basicConfig(level=logging.DEBUG)
-
-frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
-app = Flask(__name__)
-# 在 Flask App 啟動前執行
-with app.app_context():
-        init_db()
-CORS(app, origins=[frontend_url])
-
-# 從環境變數設定 JWT 密鑰
-app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
-app.config['UPLOAD_FOLDER'] = 'static/uploads' 
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
-
-jwt = JWTManager(app)
-
-
-# ===============================================
-# 應用程式配置
-# ===============================================
-# 圖片上傳目錄
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])
-        print(f"📁 已建立上傳資料夾: {app.config['UPLOAD_FOLDER']}")
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 # ===============================================
 # 資料庫連線
@@ -134,63 +99,42 @@ def init_db():
         # 調整 row_to_dict (PostgreSQL 有更方便的寫法，但為了相容你的舊代碼可以保留)
 def row_to_dict(row):
         return dict(row)
-# 優先讀取環境變數 (DATABASE_URL)，如果沒有就用本地的開發設定
-# DB_URL = os.environ.get('DATABASE_URL')
-# # 資料庫連線字串
-# if DB_URL:
-#         # 這裡通常是雲端資料庫 (例如 PostgreSQL) 的連線方式
-#         # 如果雲端也要用 MSSQL，連線字串要從 Render 的 Environment Variables 傳入
-#         conn_str = DB_URL
-# else:
-#         SERVER_IP = "localhost"
-#         INSTANCE = "SQLEXPRESS"
-#         DATABASE = "YOYODB"
-#         USERNAME = "sa"
-#         PASSWORD = "zhanka035"
-#         DRIVER = "{ODBC Driver 17 for SQL Server}"
-#         conn_str = (
-#                 f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
-#                 f"UID={USERNAME};PWD={PASSWORD}"
-#         )
 
-# if not all([SERVER_IP, INSTANCE, DATABASE, USERNAME, PASSWORD]):
-#         raise ValueError("請在 .env 檔案中設定所有資料庫連線變數")
+# ===============================================
+# Flask 和 JWT 配置
+# ===============================================
 
-# conn_str = (
-#         f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
-#         f"UID={USERNAME};PWD={PASSWORD}"
-# )
+# 設定日誌記錄
+logging.basicConfig(level=logging.DEBUG)
 
-# DATABASE_CONFIG = {
-#         "DRIVER": "{ODBC Driver 17 for SQL Server}",
-#         "SERVER": r"localhost\SQLEXPRESS",
-#         "DATABASE": "YOYODB",
-#         "TRUSTED_CONNECTION": "yes",
-# }
-# def get_db_connection():
-#         if "db" not in g:
-#                 try:
-#                         g.db = pyodbc.connect(conn_str)
-#                         logging.debug("成功建立資料庫連線")
-#                 except pyodbc.Error as ex:
-#                         sqlstate = ex.args[0]
-#                         logging.error(f"資料庫連線失敗，錯誤代碼: {sqlstate}")
-#                         return None
-#         return g.db
-#         # if 'db' not in g:
-#         #         try:
-#         #                 g.db = pyodbc.connect(
-#         #                         f"Driver={DATABASE_CONFIG['DRIVER']};"
-#         #                         f"Server={DATABASE_CONFIG['SERVER']};"
-#         #                         f"Database={DATABASE_CONFIG['DATABASE']};"
-#         #                         f"Trusted_Connection={DATABASE_CONFIG['TRUSTED_CONNECTION']};"
-#         #                 )
-#         #                 g.db.autocommit = False
-#         #                 print("✅ 成功建立新的資料庫連線 (for current request)")
-#         #         except Exception as e:
-#         #                 print("❌ 資料庫連線失敗:", e)
-#         #                 g.db = None
-#         # return g.db
+frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+app = Flask(__name__)
+# 在 Flask App 啟動前執行
+with app.app_context():
+        init_db()
+CORS(app, origins=[frontend_url])
+
+# 從環境變數設定 JWT 密鑰
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
+app.config['UPLOAD_FOLDER'] = 'static/uploads' 
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
+
+jwt = JWTManager(app)
+
+
+# ===============================================
+# 應用程式配置
+# ===============================================
+# 圖片上傳目錄
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+        print(f"📁 已建立上傳資料夾: {app.config['UPLOAD_FOLDER']}")
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 @app.teardown_appcontext
 def close_db_connection(exception=None):
