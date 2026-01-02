@@ -114,7 +114,7 @@ with app.app_context():
         init_db()
 CORS(app, resources={
         r"/*": {
-                "origins": [frontend_url, "https://ccfrontend-dnk0.onrender.com"],
+                "origins": ["*"],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": ["Content-Type", "Authorization"]
         }
@@ -193,7 +193,7 @@ def login():
                 return jsonify({"success": False, "error": "伺服器錯誤"}), 500
 
 # 使用者名稱驗證
-@app.route("/api/auth/verify_username", methods=["POST"])
+@app.route("/api/auth/verify_username", methods=["POST", "OPTIONS"])
 def verify_username():
         conn = get_db_connection()
         if conn is None:
