@@ -2,7 +2,6 @@
 
 from flask import Flask, request, jsonify, g, send_from_directory
 from flask_cors import CORS
-import pyodbc
 import os
 import json
 import psycopg2
