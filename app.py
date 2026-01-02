@@ -109,9 +109,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 frontend_url = os.environ.get('FRONTEND_URL', 'https://ccfrontend-dnk0.onrender.com')
 app = Flask(__name__)
-# 在 Flask App 啟動前執行
-with app.app_context():
-        init_db()
+
 CORS(app, resources={
         r"/*": {
                 "origins": ["*"],
@@ -894,6 +892,9 @@ def uploaded_file(filename):
 # 伺服器運行
 # ===============================================
 if __name__ == '__main__':
+        # 在 Flask App 啟動前執行
+        # with app.app_context():
+        #         init_db()
         import os
         port = int(os.environ.get("PORT", 5000))
         app.run(host='0.0.0.0', port=port)
