@@ -5,6 +5,8 @@ from flask_cors import CORS
 import pyodbc
 import os
 import json
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,15 +16,88 @@ import logging
 # ===============================================
 # Flask 和 JWT 配置
 # ===============================================
+def init_db():
+        """在伺服器啟動時，檢查並建立必要的資料表"""
+        # 注意：這裡不能用 g.db，因為這不在 Request 內，要手動連線
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        
+        try:
+                # 1. 建立 CC_USER 表 (PostgreSQL 語法)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS CC_USER (
+                        ID SERIAL PRIMARY KEY,
+                        USER_NAME VARCHAR(50) UNIQUE NOT NULL,
+                        PASSWORD TEXT NOT NULL
+                );
+                """)
+
+                # 2. 建立 CC_MASTER 表
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS CC_MASTER (
+                        CCM_ID VARCHAR(50) PRIMARY KEY,
+                        CC_SIZE VARCHAR(20),
+                        BOX_ID VARCHAR(50),
+                        USER_NAME VARCHAR(50),
+                        CC_STARTTIME TIMESTAMP,
+                        UPD_CNT INTEGER DEFAULT 0
+                );
+                """)
+
+                # 3. 建立 CC_LOG 表
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS CC_LOG (
+                        CCL_ID SERIAL PRIMARY KEY,
+                        CC_ID_FK VARCHAR(50) REFERENCES CC_MASTER(CCM_ID) ON DELETE CASCADE,
+                        INPUT_DATE TIMESTAMP,
+                        CC_STATUS VARCHAR(50),
+                        CC_SUBSTATUS VARCHAR(50),
+                        UPDATE_BY VARCHAR(50),
+                        UPDATE_TIME TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        COMMENT TEXT
+                );
+                """)
+                
+                # 4. 建立 CC_REPORT 表
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS CC_REPORT (
+                        ID SERIAL PRIMARY KEY,
+                        CCM_ID_FK VARCHAR(50),
+                        REPORTER VARCHAR(50),
+                        REPORT_TIME TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        ISSUE_TYPE VARCHAR(50),
+                        ISSUE_INFO TEXT,
+                        IMAGE_PATH TEXT,
+                        STATUS VARCHAR(20) DEFAULT '待處理',
+                        PROCESSER VARCHAR(50),
+                        PROCESS_TIME TIMESTAMP,
+                        PROCESS_NOTES TEXT
+                );
+                """)
+
+                conn.commit()
+                print("✅ 資料庫初始化完成（或已存在）")
+        except Exception as e:
+                print(f"❌ 資料庫初始化失敗: {e}")
+                conn.rollback()
+        finally:
+                cursor.close()
+                conn.close()
+
+
 
 # 設定日誌記錄
 logging.basicConfig(level=logging.DEBUG)
 
+frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 app = Flask(__name__)
-CORS(app)
+# 在 Flask App 啟動前執行
+with app.app_context():
+        init_db()
+CORS(app, origins=[frontend_url])
 
 # 從環境變數設定 JWT 密鑰
-app.config["JWT_SECRET_KEY"] = "My@SecretKey"
+app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=60)
 app.config['UPLOAD_FOLDER'] = 'static/uploads' 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
@@ -46,52 +121,78 @@ def allowed_file(filename):
 # ===============================================
 # 資料庫連線
 # ===============================================
-# 資料庫連線字串
-SERVER_IP = "localhost"
-INSTANCE = "SQLEXPRESS"
-DATABASE = "YOYODB"
-USERNAME = "sa"
-PASSWORD = "zhanka035"
-DRIVER = "{ODBC Driver 17 for SQL Server}"
-
-if not all([SERVER_IP, INSTANCE, DATABASE, USERNAME, PASSWORD]):
-        raise ValueError("請在 .env 檔案中設定所有資料庫連線變數")
-
-conn_str = (
-        f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
-        f"UID={USERNAME};PWD={PASSWORD}"
-)
-
-DATABASE_CONFIG = {
-        "DRIVER": "{ODBC Driver 17 for SQL Server}",
-        "SERVER": r"localhost\SQLEXPRESS",
-        "DATABASE": "YOYODB",
-        "TRUSTED_CONNECTION": "yes",
-}
+DATABASE_URL = os.environ.get('DATABASE_URL')
 def get_db_connection():
         if "db" not in g:
                 try:
-                        g.db = pyodbc.connect(conn_str)
-                        logging.debug("成功建立資料庫連線")
-                except pyodbc.Error as ex:
-                        sqlstate = ex.args[0]
-                        logging.error(f"資料庫連線失敗，錯誤代碼: {sqlstate}")
+                        # 建立連線
+                        g.db = psycopg2.connect(DATABASE_URL)
+                        logging.debug("成功建立 PostgreSQL 連線")
+                except Exception as ex:
+                        logging.error(f"資料庫連線失敗: {ex}")
                         return None
         return g.db
-        # if 'db' not in g:
-        #         try:
-        #                 g.db = pyodbc.connect(
-        #                         f"Driver={DATABASE_CONFIG['DRIVER']};"
-        #                         f"Server={DATABASE_CONFIG['SERVER']};"
-        #                         f"Database={DATABASE_CONFIG['DATABASE']};"
-        #                         f"Trusted_Connection={DATABASE_CONFIG['TRUSTED_CONNECTION']};"
-        #                 )
-        #                 g.db.autocommit = False
-        #                 print("✅ 成功建立新的資料庫連線 (for current request)")
-        #         except Exception as e:
-        #                 print("❌ 資料庫連線失敗:", e)
-        #                 g.db = None
-        # return g.db
+
+        # 調整 row_to_dict (PostgreSQL 有更方便的寫法，但為了相容你的舊代碼可以保留)
+def row_to_dict(row):
+        return dict(row)
+# 優先讀取環境變數 (DATABASE_URL)，如果沒有就用本地的開發設定
+# DB_URL = os.environ.get('DATABASE_URL')
+# # 資料庫連線字串
+# if DB_URL:
+#         # 這裡通常是雲端資料庫 (例如 PostgreSQL) 的連線方式
+#         # 如果雲端也要用 MSSQL，連線字串要從 Render 的 Environment Variables 傳入
+#         conn_str = DB_URL
+# else:
+#         SERVER_IP = "localhost"
+#         INSTANCE = "SQLEXPRESS"
+#         DATABASE = "YOYODB"
+#         USERNAME = "sa"
+#         PASSWORD = "zhanka035"
+#         DRIVER = "{ODBC Driver 17 for SQL Server}"
+#         conn_str = (
+#                 f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
+#                 f"UID={USERNAME};PWD={PASSWORD}"
+#         )
+
+# if not all([SERVER_IP, INSTANCE, DATABASE, USERNAME, PASSWORD]):
+#         raise ValueError("請在 .env 檔案中設定所有資料庫連線變數")
+
+# conn_str = (
+#         f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
+#         f"UID={USERNAME};PWD={PASSWORD}"
+# )
+
+# DATABASE_CONFIG = {
+#         "DRIVER": "{ODBC Driver 17 for SQL Server}",
+#         "SERVER": r"localhost\SQLEXPRESS",
+#         "DATABASE": "YOYODB",
+#         "TRUSTED_CONNECTION": "yes",
+# }
+# def get_db_connection():
+#         if "db" not in g:
+#                 try:
+#                         g.db = pyodbc.connect(conn_str)
+#                         logging.debug("成功建立資料庫連線")
+#                 except pyodbc.Error as ex:
+#                         sqlstate = ex.args[0]
+#                         logging.error(f"資料庫連線失敗，錯誤代碼: {sqlstate}")
+#                         return None
+#         return g.db
+#         # if 'db' not in g:
+#         #         try:
+#         #                 g.db = pyodbc.connect(
+#         #                         f"Driver={DATABASE_CONFIG['DRIVER']};"
+#         #                         f"Server={DATABASE_CONFIG['SERVER']};"
+#         #                         f"Database={DATABASE_CONFIG['DATABASE']};"
+#         #                         f"Trusted_Connection={DATABASE_CONFIG['TRUSTED_CONNECTION']};"
+#         #                 )
+#         #                 g.db.autocommit = False
+#         #                 print("✅ 成功建立新的資料庫連線 (for current request)")
+#         #         except Exception as e:
+#         #                 print("❌ 資料庫連線失敗:", e)
+#         #                 g.db = None
+#         # return g.db
 
 @app.teardown_appcontext
 def close_db_connection(exception=None):
@@ -126,7 +227,7 @@ def login():
                         return jsonify({"success": False, "error": "請提供使用者名稱和密碼"}), 400
 
                 cursor = conn.cursor()
-                cursor.execute("SELECT PASSWORD FROM [CC_USER] WHERE USER_NAME = ?", (username,))
+                cursor.execute(cursor.execute('SELECT "PASSWORD" FROM "CC_USER" WHERE "USER_NAME" = %s', (username,)))
                 user_row = cursor.fetchone()
 
                 if user_row and check_password_hash(user_row.PASSWORD, password):
@@ -429,14 +530,10 @@ def add_equipment():
                 cursor = conn.cursor()
                 
                 # 1. 插入一筆新的器材記錄到 CC_MASTER 表
-                cursor.execute(
-                        """
-                        INSERT INTO CC_MASTER 
-                        (CCM_ID, CC_SIZE, BOX_ID, USER_NAME, CC_STARTTIME, UPD_CNT)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        ccm_id, size, box_id, user_name, cc_start_time, 0
-                )
+                cursor.execute("""
+                        INSERT INTO CC_MASTER (CCM_ID, CC_SIZE, BOX_ID, USER_NAME, CC_STARTTIME, UPD_CNT)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                """, (ccm_id, size, box_id, user_name, cc_start_time, 0))
                 
                 # 2. 插入一筆對應的日誌記錄到 CC_LOG 表
                 cursor.execute(
