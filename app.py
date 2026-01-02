@@ -107,12 +107,18 @@ def row_to_dict(row):
 # 設定日誌記錄
 logging.basicConfig(level=logging.DEBUG)
 
-frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+frontend_url = os.environ.get('FRONTEND_URL', 'https://ccfrontend-dnk0.onrender.com')
 app = Flask(__name__)
 # 在 Flask App 啟動前執行
 with app.app_context():
         init_db()
-CORS(app, origins=[frontend_url])
+CORS(app, resources={
+        r"/*": {
+                "origins": [frontend_url, "https://ccfrontend-dnk0.onrender.com"],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization"]
+        }
+})
 
 # 從環境變數設定 JWT 密鑰
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'My@SecretKey')
