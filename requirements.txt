@@ -6,8 +6,5 @@ flask-cors
 flask-jwt-extended
 Werkzeug
 
-# PostgreSQL 資料庫連接
-psycopg2-binary
-
-# 生產環境伺服器 (Render 執行必要)
-gunicorn
+sqlalchemy
+pyodbc
