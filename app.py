@@ -9,17 +9,28 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, JWTManager, jwt_required, get_jwt_identity
+from dotenv import load_dotenv
 from datetime import timedelta
+from gevent import pywsgi
 import logging
 # ===============================================
 # Flask 和 JWT 配置
 # ===============================================
-
+load_dotenv()
 # 設定日誌記錄
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 CORS(app)
+
+@app.before_request
+def handle_preflight():
+        if request.method == "OPTIONS":
+                res = app.make_response("")
+                res.headers['Access-Control-Allow-Origin'] = "*"
+                res.headers['Access-Control-Allow-Methods'] = "GET, POST, PUT, DELETE, OPTIONS"
+                res.headers['Access-Control-Allow-Headers'] = "Content-Type, Authorization"
+                return res, 200
 
 # 從環境變數設定 JWT 密鑰
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
@@ -28,7 +39,6 @@ app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
 
 jwt = JWTManager(app)
-
 
 # ===============================================
 # 應用程式配置
@@ -58,13 +68,17 @@ if not all([SERVER_IP, INSTANCE, DATABASE, USERNAME, PASSWORD]):
         raise ValueError("請在 .env 檔案中設定所有資料庫連線變數")
 
 conn_str = (
-        f"DRIVER={DRIVER};SERVER={SERVER_IP}\\{INSTANCE};DATABASE={DATABASE};"
-        f"UID={USERNAME};PWD={PASSWORD}"
+        f"DRIVER={DRIVER};"
+        f"SERVER={SERVER_IP},1433;"  # Docker 內部建議直接用 IP 或服務名稱
+        f"DATABASE={DATABASE};"
+        f"UID={USERNAME};"
+        f"PWD={PASSWORD};"
+        "TrustServerCertificate=yes;" # 內網開發建議加上，避免 SSL 握手失敗
 )
 
 DATABASE_CONFIG = {
         "DRIVER": "{ODBC Driver 17 for SQL Server}",
-        "SERVER": r"localhost\SQLEXPRESS",
+        "SERVER": r"192.168.2.65\SQLEXPRESS",
         "DATABASE": "YOYODB",
         "TRUSTED_CONNECTION": "yes",
 }
@@ -78,20 +92,6 @@ def get_db_connection():
                         logging.error(f"資料庫連線失敗，錯誤代碼: {sqlstate}")
                         return None
         return g.db
-        # if 'db' not in g:
-        #         try:
-        #                 g.db = pyodbc.connect(
-        #                         f"Driver={DATABASE_CONFIG['DRIVER']};"
-        #                         f"Server={DATABASE_CONFIG['SERVER']};"
-        #                         f"Database={DATABASE_CONFIG['DATABASE']};"
-        #                         f"Trusted_Connection={DATABASE_CONFIG['TRUSTED_CONNECTION']};"
-        #                 )
-        #                 g.db.autocommit = False
-        #                 print("✅ 成功建立新的資料庫連線 (for current request)")
-        #         except Exception as e:
-        #                 print("❌ 資料庫連線失敗:", e)
-        #                 g.db = None
-        # return g.db
 
 @app.teardown_appcontext
 def close_db_connection(exception=None):
@@ -103,11 +103,7 @@ def close_db_connection(exception=None):
 def row_to_dict(row):
         return {column[0]: row[i] for i, column in enumerate(row.cursor_description)}
 
-# ===============================================
-# 輔助函數
-# ===============================================
-def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
+
 
 # ===============================================
 # 登入 API
@@ -849,4 +845,6 @@ def uploaded_file(filename):
 # 伺服器運行
 # ===============================================
 if __name__ == '__main__':
-        app.run(host='0.0.0.0', port=5000, debug=True)
+        app.run(host='0.0.0.0', port=5172, debug=True)
+        server = pywsgi.WSGIServer(('0.0.0.0', 5172), app)
+        server.serve_forever()

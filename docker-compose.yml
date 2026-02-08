@@ -1,29 +1,33 @@
+version: '3.8'
+
 services:
-  backend:
-    build: .
+  # 1. 後端服務 (API)
+  cc-backend:
+    build: 
+      context: .  # 指向你後端程式碼資料夾的路徑
+      dockerfile: Dockerfile
     container_name: cc-backend
+    restart: always
     ports:
-      - "5000:5000"
+      - "5172:5172"         # 將容器的 5172 埠對應到 Windows 的 5172
+    environment:
+      - DB_SERVER_IP=db     # 重點：這裡直接寫 db，Docker 會自動連到下面的 db 服務
+      - DB_DATABASE=YOYODB
+      - DB_USERNAME=sa
+      - DB_PASSWORD=Zhanka@035
+      - FLASK_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=5172
     depends_on:
-      - db
-    environment:
-      - DB_SERVER=db
-      - DB_NAME=CCDB
-      - DB_USER=sa
-      - DB_PASSWORD=YourStrong!Passw0rd
-    volumes:
-      - .:/app
+      - db                  # 確保資料庫啟動後，後端才啟動
 
+  # 2. 資料庫服務 (SQL Server)
   db:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    container_name: cc-sqlexpress
-    ports:
-      - "1433:1433"
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql-db
+    restart: always
     environment:
-      SA_PASSWORD: "YourStrong!Passw0rd"
-      ACCEPT_EULA: "Y"
-    volumes:
-      - mssql_data:/var/opt/mssql
-
-volumes:
-  mssql_data:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Zhanka@035
+      - MSSQL_PID=Express
+    ports:
+      - "1434:1433"         # 為了避免與你本機的 SQL 重疊，將容器的 1433 對應到 143

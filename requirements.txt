@@ -8,3 +8,5 @@ Werkzeug
 
 sqlalchemy
 pyodbc
+dotenv
+gevent
